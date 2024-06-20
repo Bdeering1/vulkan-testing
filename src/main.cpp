@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <vector>
 #include <map>
+#include <optional>
 
 using namespace std;
 
@@ -15,6 +16,14 @@ const uint32_t HEIGHT = 600;
 
 const vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
+};
+
+struct QueueFamilyIndices {
+    optional<uint32_t> graphicsFamily;
+
+    bool hasRequired() {
+        return graphicsFamily.has_value();
+    }
 };
 
 #ifdef NDEBUG
@@ -51,6 +60,21 @@ private:
         createInstance();
         setupDebugMessenger();
         pickPhysicalDevice();
+    }
+
+    void mainLoop() {
+        while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
+        }
+    }
+
+    void cleanup() {
+        if (enableValidationLayers) {
+            destroyDebugMessenger();
+        }
+        vkDestroyInstance(instance, nullptr);
+        glfwDestroyWindow(window);
+        glfwTerminate();
     }
 
     void createInstance() {
@@ -149,6 +173,69 @@ private:
         return extensions;
     }
 
+    void pickPhysicalDevice() {
+        uint32_t deviceCount = 0;
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+        if (deviceCount == 0) throw runtime_error("failed to find GPUs with Vulkan support!");
+
+        vector<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+        cout << "Looking for physical devices...\n";
+        multimap<int, VkPhysicalDevice> candidates;
+        for (const auto & device : devices) {
+            int score = rateDeviceSuitability(device);
+            candidates.insert(make_pair(score, device));
+
+            cout << "Score: " << score << "\n";
+        }
+        putchar('\n');
+
+        if (candidates.rbegin()->first == 0) throw runtime_error("failed to find a suitable GPU!");
+
+        physicalDevice = candidates.rbegin()->second;
+    }
+
+    bool rateDeviceSuitability(VkPhysicalDevice device) {
+        VkPhysicalDeviceProperties deviceProperties;
+        VkPhysicalDeviceFeatures deviceFeatures;
+        vkGetPhysicalDeviceProperties(device, &deviceProperties);
+        vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+        cout << "Device: " << deviceProperties.deviceName << "\n";
+
+        QueueFamilyIndices indices = findQueueFamilies(device);
+        if (!indices.hasRequired()) return 0;
+
+        int score = 0;
+        if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) score += 1000;
+        score += deviceProperties.limits.maxImageDimension2D;
+
+        return score;
+    }
+
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+        QueueFamilyIndices indices;
+
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+        vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+        int i = 0;
+        for (const auto & queueFamily : queueFamilies) {
+            if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                indices.graphicsFamily = i;
+            }
+            if (indices.hasRequired()) break;
+
+            i++;
+        }
+
+        return indices;
+    }
+
     void setupDebugMessenger() {
         if (!enableValidationLayers) return;
 
@@ -200,60 +287,6 @@ private:
         }
         cerr << pCallbackData->pMessage << "\n";
         return VK_FALSE;
-    }
-
-    void pickPhysicalDevice() {
-        uint32_t deviceCount = 0;
-        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
-
-        if (deviceCount == 0) throw runtime_error("failed to find GPUs with Vulkan support!");
-
-        vector<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
-
-        multimap<int, VkPhysicalDevice> candidates;
-        for (const auto & device : devices) {
-            int score = rateDeviceSuitability(device);
-            candidates.insert(make_pair(score, device));
-
-            cout << "Score: " << score << "\n\n";
-        }
-
-        if (candidates.rbegin()->first == 0) throw runtime_error("failed to find a suitable GPU!");
-
-        physicalDevice = candidates.rbegin()->second;
-    }
-
-    bool rateDeviceSuitability(VkPhysicalDevice device) {
-        VkPhysicalDeviceProperties deviceProperties;
-        VkPhysicalDeviceFeatures deviceFeatures;
-        vkGetPhysicalDeviceProperties(device, &deviceProperties);
-        vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-
-        cout << "Device: " << deviceProperties.deviceName << "\n";
-
-        // if (!deviceFeatures.geometryShader) return 0;
-
-        int score = 0;
-        if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) score += 1000;
-        score += deviceProperties.limits.maxImageDimension2D;
-
-        return score;
-    }
-
-    void mainLoop() {
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents();
-        }
-    }
-
-    void cleanup() {
-        if (enableValidationLayers) {
-            destroyDebugMessenger();
-        }
-        vkDestroyInstance(instance, nullptr);
-        glfwDestroyWindow(window);
-        glfwTerminate();
     }
 
     void destroyDebugMessenger() {
