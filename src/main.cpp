@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <vector>
+#include <map>
 
 using namespace std;
 
@@ -35,6 +36,7 @@ private:
     GLFWwindow* window;
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
     void initWindow() {
         glfwInit();
@@ -48,6 +50,7 @@ private:
     void initVulkan() {
         createInstance();
         setupDebugMessenger();
+        pickPhysicalDevice();
     }
 
     void createInstance() {
@@ -133,7 +136,7 @@ private:
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensionProps.data());
 
         cout << "available extensions:\n";
-        for (const auto& ep : extensionProps) {
+        for (const auto & ep : extensionProps) {
             cout << " " << ep.extensionName << "\n";
         }
 
@@ -197,6 +200,45 @@ private:
         }
         cerr << pCallbackData->pMessage << "\n";
         return VK_FALSE;
+    }
+
+    void pickPhysicalDevice() {
+        uint32_t deviceCount = 0;
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+        if (deviceCount == 0) throw runtime_error("failed to find GPUs with Vulkan support!");
+
+        vector<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+        multimap<int, VkPhysicalDevice> candidates;
+        for (const auto & device : devices) {
+            int score = rateDeviceSuitability(device);
+            candidates.insert(make_pair(score, device));
+
+            cout << "Score: " << score << "\n\n";
+        }
+
+        if (candidates.rbegin()->first == 0) throw runtime_error("failed to find a suitable GPU!");
+
+        physicalDevice = candidates.rbegin()->second;
+    }
+
+    bool rateDeviceSuitability(VkPhysicalDevice device) {
+        VkPhysicalDeviceProperties deviceProperties;
+        VkPhysicalDeviceFeatures deviceFeatures;
+        vkGetPhysicalDeviceProperties(device, &deviceProperties);
+        vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+        cout << "Device: " << deviceProperties.deviceName << "\n";
+
+        // if (!deviceFeatures.geometryShader) return 0;
+
+        int score = 0;
+        if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) score += 1000;
+        score += deviceProperties.limits.maxImageDimension2D;
+
+        return score;
     }
 
     void mainLoop() {
