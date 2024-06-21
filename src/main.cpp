@@ -69,6 +69,7 @@ private:
 
     VkSwapchainKHR swapchain;
     vector<VkImage> swapchainImages;
+    vector<VkImageView> swapchainImageViews;
     VkFormat swapchainImageFormat;
     VkExtent2D swapchainExtent;
 
@@ -88,6 +89,7 @@ private:
         pickPhysicalDevice();
         createLogicalDevice();
         createSwapchain();
+        createImageViews();
     }
 
     void mainLoop() {
@@ -97,6 +99,9 @@ private:
     }
 
     void cleanup() {
+        for (auto imageView : swapchainImageViews) {
+            vkDestroyImageView(device, imageView, nullptr);
+        }
         vkDestroySwapchainKHR(device, swapchain, nullptr);
         vkDestroyDevice(device, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
@@ -413,6 +418,9 @@ private:
         vkGetSwapchainImagesKHR(device, swapchain, &imageCount, nullptr);
         swapchainImages.resize(imageCount);
         vkGetSwapchainImagesKHR(device, swapchain, &imageCount, swapchainImages.data());
+
+        swapchainImageFormat = surfaceFormat.format;
+        swapchainExtent = extent;
     };
 
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const vector<VkSurfaceFormatKHR>& availableFormats) {
@@ -452,6 +460,36 @@ private:
             actualExtent.width = clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
             return actualExtent;
+        }
+    }
+
+    void createImageViews() {
+        swapchainImageViews.resize(swapchainImages.size());
+
+        for (auto i = 0; i < swapchainImages.size(); i++) {
+            VkImageViewCreateInfo createInfo {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = swapchainImages[i],
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = swapchainImageFormat,
+                .components {
+                    .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+                },
+                .subresourceRange {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            };
+
+            if (vkCreateImageView(device, &createInfo, nullptr, &swapchainImageViews[i]) != VK_SUCCESS) {
+                throw runtime_error("failed to create image views!");
+            }
         }
     }
 
